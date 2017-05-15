@@ -92,12 +92,8 @@ def _activation_summary(x):
     tf.summary.scalar(tensor_name + '/sparsity',
                       tf.nn.zero_fraction(x))
 
-
-
-
 def distorted_inputs():
     """Construct distorted input for CIFAR training using the Reader ops.
-
     Returns:
       images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
       labels: Labels. 1D tensor of [batch_size] size.
@@ -140,14 +136,10 @@ def inputs(eval_data):
         labels = tf.cast(labels, tf.float16)
     return images, labels
 
-
-
 def Unet(images):
     """Build the Unet model.
-
     Args:
       images: Images returned from distorted_inputs() or inputs().
-
     Returns:
       Logits.
     """
@@ -212,49 +204,77 @@ def Unet(images):
         conv5_2 = layers.dropout(conv5_2)
 
     # deconv1
-
+    with tf.variabale_scope('deconv1') as scope:
+        deconv1 = layers.deconv_relu(conv5_2, [2, 2, 1024, 512], scope.name)
+        _activation_summary(deconv1)
     # crop concat
-
+    with tf.variable_scope('crop_concat_1') as scope:
+        crop_concat_1 = layers.crop_and_concat(conv4_2, deconv1) # doubles the feature map
     # conv6_1
+    with tf.variable_scope('conv6_1') as scope:
+        conv6_1 = layers.conv_relu(crop_concat_1, [3, 3, 1024, 512], scope.name)
+        _activation_summary(conv6_1)
     # conv6_2
+    with tf.variable_scope('conv6_2') as scope:
+        conv6_2 = layers.conv_relu(conv6_1, [3, 3, 512, 512], scope.name)
+        _activation_summary(conv6_2)
 
+    # deconv2
+    with tf.variabale_scope('deconv2') as scope:
+        deconv2 = layers.deconv_relu(conv6_2, [2, 2, 512, 256], scope.name)
+        _activation_summary(deconv1)
+    # crop concat
+    with tf.variable_scope('crop_concat_2') as scope:
+        crop_concat_2 = layers.crop_and_concat(conv3_2, deconv2) # doubles the feature map
+    # conv7_1
+    with tf.variable_scope('conv7_1') as scope:
+        conv7_1 = layers.conv_relu(crop_concat_2, [3, 3, 512, 256], scope.name)
+        _activation_summary(conv7_1)
+    # conv7_2
+    with tf.variable_scope('conv7_2') as scope:
+        conv7_2 = layers.conv_relu(conv7_1, [3, 3, 256, 256], scope.name)
+        _activation_summary(conv7_2)
 
-    # # local3
-    # with tf.variable_scope('local1') as scope:
-    #     # Move everything into depth so we can perform a single matrix
-    #     # multiply.
-    #     reshape = tf.reshape(pool2, [FLAGS.batch_size, -1])
-    #     dim = reshape.get_shape()[1].value
-    #     weights = layers.variable_with_weight_decay('weights', shape=[dim, 384],
-    #                                           stddev=0.04, wd=0.004)
-    #     biases = layers.variable_on_cpu(
-    #         'biases', [384], tf.constant_initializer(0.1))
-    #     local3 = tf.nn.relu(tf.matmul(reshape, weights) +
-    #                         biases, name=scope.name)
-    #     _activation_summary(local3)
+    # deconv3
+    with tf.variabale_scope('deconv3') as scope:
+        deconv3 = layers.deconv_relu(conv7_2, [2, 2, 256, 128], scope.name)
+        _activation_summary(deconv3)
+    # crop concat
+    with tf.variable_scope('crop_concat_3') as scope:
+        crop_concat_3 = layers.crop_and_concat(conv2_2, deconv3) # doubles the feature map
+    # conv8_1
+    with tf.variable_scope('conv8_1') as scope:
+        conv8_1 = layers.conv_relu(crop_concat_3, [3, 3, 256, 128], scope.name)
+        _activation_summary(conv8_1)
+    # conv8_2
+    with tf.variable_scope('conv8_2') as scope:
+        conv8_2 = layers.conv_relu(conv8_1, [3, 3, 128, 128], scope.name)
+        _activation_summary(conv8_2)
 
-    # # local4
-    # with tf.variable_scope('local4') as scope:
-    #     weights = _variable_with_weight_decay('weights', shape=[384, 192],
-    #                                           stddev=0.04, wd=0.004)
-    #     biases = _variable_on_cpu(
-    #         'biases', [192], tf.constant_initializer(0.1))
-    #     local4 = tf.nn.relu(tf.matmul(local3, weights) +
-    #                         biases, name=scope.name)
-    #     _activation_summary(local4)
+     # deconv4
+    with tf.variabale_scope('deconv4') as scope:
+        deconv4 = layers.deconv_relu(conv8_2, [2, 2, 128, 64], scope.name)
+        _activation_summary(deconv4)
+    # crop concat
+    with tf.variable_scope('crop_concat_4') as scope:
+        crop_concat_4 = layers.crop_and_concat(conv1_2, deconv4) # doubles the feature map
+    # conv9_1
+    with tf.variable_scope('conv9_1') as scope:
+        conv9_1 = layers.conv_relu(crop_concat_4, [3, 3, 128, 64], scope.name)
+        _activation_summary(conv9_1)
+    # conv9_2
+    with tf.variable_scope('conv9_2') as scope:
+        conv9_2 = layers.conv_relu(conv9_1, [3, 3, 128, 64], scope.name)
+        _activation_summary(conv9_2)
 
+    # softmax_linear
     # linear layer(WX + b),
     # We don't apply softmax here because
     # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
     # and performs the softmax internally for efficiency.
-    # with tf.variable_scope('softmax_linear') as scope:
-    #     weights = _variable_with_weight_decay('weights', [192, NUM_CLASSES],
-    #                                           stddev=1 / 192.0, wd=0.0)
-    #     biases = _variable_on_cpu('biases', [NUM_CLASSES],
-    #                               tf.constant_initializer(0.0))
-    #     softmax_linear = tf.add(
-    #         tf.matmul(local4, weights), biases, name=scope.name)
-    #     _activation_summary(softmax_linear)
+    with tf.variable_scope('softmax_linear') as scope:
+        softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, NUM_CLASSES], scope.name)
+        _activation_summary(softmax_linear)
 
     return softmax_linear
 
