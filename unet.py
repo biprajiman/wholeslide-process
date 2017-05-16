@@ -1,3 +1,4 @@
+# ==============================================================================
 # Copyright 2017 BICI2 Lab University of Florida
 # Author: Manish Sapkota
 # Some of the codes have been adopted from original Tensorflow examples
@@ -6,6 +7,7 @@
 """Builds the UNET network."""
 # pylint: disable=missing-docstring
 # pylint: disable=line-too-long
+# # pylint: disable=invalid-name
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,40 +15,15 @@ from __future__ import print_function
 
 import os
 import re
-import sys
-import tarfile
 import tensorflow as tf
 import layers
 
 FLAGS = tf.app.flags.FLAGS
 
-# Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 128,
-                            """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_string('data_dir', '/tmp/cifar10_data',
-                           """Path to the CIFAR-10 data directory.""")
-tf.app.flags.DEFINE_boolean('use_fp16', False,
-                            """Train the model using fp16.""")
-
-# Global constants describing the CIFAR-10 data set.
-IMAGE_SIZE = 572
-NUM_CLASSES = 2  # foreground and background
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 6000
-NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 2000
-
-
-# Constants describing the training process.
-MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
-NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
-LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
-INITIAL_LEARNING_RATE = 0.1       # Initial learning rate.
-DEFAULT_WEIGHT_DECAY = 0.0005
-
 # If a model is trained with multiple GPUs, prefix all Op names with tower_name
 # to differentiate the operations. Note that this prefix is removed from the
 # names of the summaries when visualizing a model.
 TOWER_NAME = 'tower'
-
 
 def _activation_summary(x):
     """Helper to create summaries for activations.
@@ -65,50 +42,6 @@ def _activation_summary(x):
     tf.summary.histogram(tensor_name + '/activations', x)
     tf.summary.scalar(tensor_name + '/sparsity',
                       tf.nn.zero_fraction(x))
-
-def distorted_inputs():
-    """Construct distorted input for CIFAR training using the Reader ops.
-    Returns:
-      images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-      labels: Labels. 1D tensor of [batch_size] size.
-
-    Raises:
-      ValueError: If no data_dir
-    """
-    if not FLAGS.data_dir:
-        raise ValueError('Please supply a data_dir')
-    data_dir = os.path.join(FLAGS.data_dir, 'cifar-10-batches-bin')
-    images, labels = cifar10_input.distorted_inputs(data_dir=data_dir,
-                                                    batch_size=FLAGS.batch_size)
-    if FLAGS.use_fp16:
-        images = tf.cast(images, tf.float16)
-        labels = tf.cast(labels, tf.float16)
-    return images, labels
-
-
-def inputs(eval_data):
-    """Construct input for CIFAR evaluation using the Reader ops.
-
-    Args:
-      eval_data: bool, indicating if one should use the train or eval data set.
-
-    Returns:
-      images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-      labels: Labels. 1D tensor of [batch_size] size.
-
-    Raises:
-      ValueError: If no data_dir
-    """
-    if not FLAGS.data_dir:
-        raise ValueError('Please supply a data_dir')
-    data_dir = os.path.join(FLAGS.data_dir, 'cifar-10-batches-bin')
-    images, labels = cifar10_input.inputs(eval_data=eval_data,
-                                          data_dir=data_dir,
-                                          batch_size=FLAGS.batch_size)
-    if FLAGS.use_fp16:
-        images = tf.cast(images, tf.float16)
-        labels = tf.cast(labels, tf.float16)
-    return images, labels
 
 def Unet(images):
     """Build the Unet model.
@@ -247,20 +180,19 @@ def Unet(images):
     # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
     # and performs the softmax internally for efficiency.
     with tf.variable_scope('softmax_linear') as scope:
-        softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, NUM_CLASSES], scope.name)
+        softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, FLAGS.num_classes], scope.name)
         _activation_summary(softmax_linear)
 
     return softmax_linear
 
 
-def loss(logits, labels):
+def loss(logits=None, labels=None):
     """Add L2Loss to all the trainable variables.
 
     Add summary for "Loss" and "Loss/avg".
     Args:
       logits: Logits from inference().
-      labels: Labels from distorted_inputs or inputs(). 1-D tensor
-              of shape [batch_size]
+      labels: Labels from inputs. 1-D tensor of shape [batch_size]
 
     Returns:
       Loss tensor of type float.
@@ -278,7 +210,7 @@ def loss(logits, labels):
 
 
 def _add_loss_summaries(total_loss):
-    """Add summaries for losses in CIFAR-10 model.
+    """Add summaries for losses in model.
 
     Generates moving average for all losses and associated summaries for
     visualizing the performance of the network.
@@ -304,8 +236,8 @@ def _add_loss_summaries(total_loss):
     return loss_averages_op
 
 
-def train(total_loss, global_step):
-    """Train CIFAR-10 model.
+def train(total_loss=None, global_step=None):
+    """Train model.
 
     Create an optimizer and apply to all trainable variables. Add moving
     average for all trainable variables.
@@ -318,14 +250,14 @@ def train(total_loss, global_step):
       train_op: op for training.
     """
     # Variables that affect learning rate.
-    num_batches_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / FLAGS.batch_size
-    decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
+    num_batches_per_epoch = FLAGS.num_examples_per_epoch / FLAGS.batch_size
+    decay_steps = int(num_batches_per_epoch * FLAGS.decay_num_epoch)
 
     # Decay the learning rate exponentially based on the number of steps.
-    lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
+    lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
                                     global_step,
                                     decay_steps,
-                                    LEARNING_RATE_DECAY_FACTOR,
+                                    FLAGS.lr_decay,
                                     staircase=True)
     tf.summary.scalar('learning_rate', lr)
 
@@ -334,7 +266,7 @@ def train(total_loss, global_step):
 
     # Compute gradients.
     with tf.control_dependencies([loss_averages_op]):
-        opt = tf.train.GradientDescentOptimizer(lr)
+        opt = tf.train.GradAdamOptimizer(learning_rate=lr)
         grads = opt.compute_gradients(total_loss)
 
     # Apply gradients.
@@ -350,11 +282,30 @@ def train(total_loss, global_step):
             tf.summary.histogram(var.op.name + '/gradients', grad)
 
     # Track the moving averages of all trainable variables.
-    variable_averages = tf.train.ExponentialMovingAverage(
-        MOVING_AVERAGE_DECAY, global_step)
+    variable_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, global_step)
     variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
     with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
         train_op = tf.no_op(name='train')
 
     return train_op
+
+def dice_coef(y_true, y_pred, smooth=1.0):
+    y_true_f = tf.flatten(y_true)
+    y_pred_f = tf.flatten(y_pred)
+    intersection = tf.sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (tf.sum(y_true_f) + tf.sum(y_pred_f) + smooth)
+
+def save_model(sess, saver, checkpoint_dir, model_name, step):
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+    saver.save(sess, os.path.join(checkpoint_dir, model_name), global_step=step)
+
+def load_model(sess, saver, checkpoint_dir):
+    print("[*] Reading checkpoints...")
+    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+        ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+        saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
+        return True
+    return False
