@@ -8,9 +8,7 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Adding local Keras
-HOME_DIR = os.path.expanduser('~')
-keras_version = 'keras_pingpong'
-KERAS_PATH = os.path.join(HOME_DIR, 'Github', keras_version)
+KERAS_PATH = '/media/manish/Data/keras/keras'
 sys.path.insert(0, KERAS_PATH)
 sys.path.insert(0, os.path.join(KERAS_PATH, 'keras'))
 sys.path.insert(0, os.path.join(KERAS_PATH, 'keras', 'layers'))
@@ -66,11 +64,7 @@ def data_weighted_loader(path, batch_size, ignore_val=44, pos_val=255, neg_val=1
             yield img/255.0, mask, weight, img_labels
             # yield norm_mean_img(img), mask, weight, img_labels
 
-    train_data_gen_args = dict(
-                    horizontal_flip=True,
-                    vertical_flip=True,
-                    zoom_range=0.1,
-                    fill_mode='reflect')
+    train_data_gen_args = dict(-)
 
     seed = 1234
     train_image_datagen = ImageDataGenerator(**train_data_gen_args).flow_from_directory(

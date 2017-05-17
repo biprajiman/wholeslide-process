@@ -26,7 +26,6 @@ sys.path.insert(0, os.path.join(KERAS_PATH, 'keras'))
 sys.path.insert(0, os.path.join(KERAS_PATH, 'keras', 'layers'))
 
 import keras
-from skimage import io, transform, morphology
 import shutil
 import time
 import unet as u
@@ -57,7 +56,6 @@ def set_tf_flags():
     tf.app.flags.DEFINE_string('log_dir', './Logs')
     tf.app.flags.DEFINE_string('model_name', 'Unet')
     tf.app.flags.DEFINE_integer('seed', 1234)
-
 
 def train_unet():
     # Config gpu for session
