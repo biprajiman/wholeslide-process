@@ -18,12 +18,9 @@ from termcolor import colored
 import tensorflow as tf
 
 # Adding local Keras
-HOME_DIR = os.path.expanduser('~')
-keras_version = 'keras_pingpong'
-KERAS_PATH = os.path.join(HOME_DIR, 'Github', keras_version)
+KERAS_PATH = '/media/manish/Data/keras/keras'
 sys.path.insert(0, KERAS_PATH)
 sys.path.insert(0, os.path.join(KERAS_PATH, 'keras'))
-sys.path.insert(0, os.path.join(KERAS_PATH, 'keras', 'layers'))
 
 import keras
 import shutil
@@ -33,36 +30,35 @@ from data_gen import data_weighted_loader
 
 FLAGS = tf.app.flags.FLAGS
 
-
 def set_tf_flags():
     # image parameters
     tf.app.flags.DEFINE_integer('input_rows', 512, """Input image height""")
     tf.app.flags.DEFINE_integer('input_cols', 512, """Input image width""")
     tf.app.flags.DEFINE_integer('input_channel', 3, """Input image channels""")
-    tf.app.flags.DEFINE_integer('num_classes', 2, """Output classes""")
+    tf.app.flags.DEFINE_integer('num_classes', 1, """Output classes""")
 
     # training parameters
     tf.app.flags.DEFINE_boolean('use_fp16', False, """Train the model using fp16.""")
-    tf.app.flags.DEFINE_integer('num_epoch', 10)
-    tf.app.flags.DEFINE_integer('num_examples_per_epoch', 20000)
-    tf.app.flags.DEFINE_integer('batch_size', 5)
-    tf.app.flags.DEFINE_float('initial_learning_rate', 0.1)
-    tf.app.flags.DEFINE_float('lr_decay', 0.1)
-    tf.app.flags.DEFINE_float('moving_average_decay', 0.9999)
-    tf.app.flags.DEFINE_float('weight_decay', 0.0005)
-    tf.app.flags.DEFINE_integer('decay_num_epoch', 1)
-    tf.app.flags.DEFINE_string('training_dir', '../BladderData/Segmentation/')
-    tf.app.flags.DEFINE_string('checkpoint_dir', './Checkpoints')
-    tf.app.flags.DEFINE_string('log_dir', './Logs')
-    tf.app.flags.DEFINE_string('model_name', 'Unet')
-    tf.app.flags.DEFINE_integer('seed', 1234)
+    tf.app.flags.DEFINE_integer('num_epoch', 10, """Number of epochs to run""")
+    tf.app.flags.DEFINE_integer('num_examples_per_epoch', 20000, """Number of examples seen per epoch""")
+    tf.app.flags.DEFINE_integer('batch_size', 5, """batch size per iteration""")
+    tf.app.flags.DEFINE_float('initial_learning_rate', 0.1, """Initial learning rate""")
+    tf.app.flags.DEFINE_float('lr_decay', 0.1, """learning rate decay multiplier""")
+    tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, """Moving average decay""")
+    tf.app.flags.DEFINE_float('weight_decay', 0.0005, """Weight regularizer""")
+    tf.app.flags.DEFINE_integer('decay_num_epoch', 1, """Decay learning rate after num of epoch""")
+    tf.app.flags.DEFINE_string('training_dir', './data/BladderData/Segmentation/', """Training data folder""")
+    tf.app.flags.DEFINE_string('checkpoint_dir', './Checkpoints', """Folder to save intermediate training snapshots""")
+    tf.app.flags.DEFINE_string('log_dir', './Logs', """Directory to save the logs""")
+    tf.app.flags.DEFINE_string('model_name', 'Unet', """Name of the architecture being run""")
+    tf.app.flags.DEFINE_integer('seed', 1234, """Random seed for to randomization""")
 
 def train_unet():
     # Config gpu for session
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
-    tf.set_session(sess)
+    #tf.set_session(sess)
 
     # Setting image generator
     train_generator, _ = data_weighted_loader(
@@ -86,19 +82,30 @@ def train_unet():
     train_op = u.train(total_loss=unet_loss, global_step=global_step)
 
     unet_pred = tf.nn.softmax(unet_pred)
+    print("Prediction shape:")
+    print(unet_pred.get_shape())
     unet_acc = tf.reduce_mean(u.dice_coef(label, unet_pred))
 
     # define summary for tensorboard
+    tf.summary.scalar('loss', unet_loss)
+    tf.summary.scalar('dice', unet_acc)
+    tf.summary.image('input', img, max_outputs=3)
+    tf.summary.image('label', label, max_outputs=3)
+    tf.summary.image('weight', weights, max_outputs=3)
+    tf.summary.image('prediction', unet_pred, max_outputs=3)
     summary_merged = tf.summary.merge_all()
 
     # define saver
-    if os.path.exists(FLAGS.log_dir):
-        shutil.rmtree(FLAGS.log_dir)
+    #if os.path.exists(FLAGS.log_dir):
+        #shutil.rmtree(FLAGS.log_dir)
     train_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
     saver = tf.train.Saver()
 
     # Training Begins
-    tot_iter = FLAGS.num_minibatch * FLAGS.num_epoch
+    tot_iter = FLAGS.num_examples_per_epoch * FLAGS.num_epoch
+    print("Total Iteration:")
+    print(tot_iter)
+
     sess.run(tf.global_variables_initializer())
 
     with sess.as_default():
@@ -114,10 +121,8 @@ def train_unet():
         start_t = time.time()
         for ibatch in range(start_step + 1, start_step + tot_iter + 1):
             x_batch, y_batch, weight, _ = train_generator.next()
-
             feed_dict = {img: x_batch, label: y_batch, weights: weight}
-            _, loss, summary, dice_score = sess.run(
-                [train_op, unet_loss, summary_merged, unet_acc], feed_dict=feed_dict)
+            _, loss, summary, dice_score = sess.run([train_op, unet_loss, summary_merged, unet_acc], feed_dict=feed_dict)
 
             global_step.assign(ibatch).eval()
             train_writer.add_summary(summary, ibatch)

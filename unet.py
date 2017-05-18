@@ -13,10 +13,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
+import os, sys
 import re
 import tensorflow as tf
-import layers
+import mlayers as layers
+import tensorflow_backend as tb
+
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -64,7 +66,7 @@ def Unet(images):
         conv1_2 = layers.conv_relu(conv1_1, [3, 3, 64, 64], scope.name)
         _activation_summary(conv1_2)
     # pool1
-    pool1 = layers.max_pool(conv1_2, 'pool1', False)
+    pool1 = layers.max_pool(conv1_2, 'pool1')
 
     # conv2_1
     with tf.variable_scope('conv2_1') as scope:
@@ -72,10 +74,10 @@ def Unet(images):
         _activation_summary(conv2_1)
     # conv2_2
     with tf.variable_scope('conv2_2') as scope:
-        conv2_2 = layers.conv_relu(conv2_1, [3, 3, 64, 128], scope.name)
+        conv2_2 = layers.conv_relu(conv2_1, [3, 3, 128, 128], scope.name)
         _activation_summary(conv2_2)
     # pool2
-    pool2 = layers.max_pool(conv1_2, 'pool2', False)
+    pool2 = layers.max_pool(conv2_2, 'pool2')
 
     # conv3_1
     with tf.variable_scope('conv3_1') as scope:
@@ -86,7 +88,7 @@ def Unet(images):
         conv3_2 = layers.conv_relu(conv3_1, [3, 3, 256, 256], scope.name)
         _activation_summary(conv3_2)
     # pool3
-    pool3 = layers.max_pool(conv3_2, 'pool3', False)
+    pool3 = layers.max_pool(conv3_2, 'pool3')
 
     # conv4_1
     with tf.variable_scope('conv4_1') as scope:
@@ -98,7 +100,7 @@ def Unet(images):
         _activation_summary(conv4_2)
         conv4_2 = layers.dropout(conv4_2)
     # pool4
-    pool4 = layers.max_pool(conv4_2, 'pool4', False)
+    pool4 = layers.max_pool(conv4_2, 'pool4')
 
     # conv5_1
     with tf.variable_scope('conv5_1') as scope:
@@ -111,8 +113,8 @@ def Unet(images):
         conv5_2 = layers.dropout(conv5_2)
 
     # deconv1
-    with tf.variabale_scope('deconv1') as scope:
-        deconv1 = layers.deconv_relu(conv5_2, [2, 2, 1024, 512], scope.name)
+    with tf.variable_scope('deconv1') as scope:
+        deconv1 = layers.deconv_relu(conv5_2, [2, 2, 512, 1024], scope.name)
         _activation_summary(deconv1)
     # crop concat
     with tf.variable_scope('crop_concat_1') as scope:
@@ -127,8 +129,8 @@ def Unet(images):
         _activation_summary(conv6_2)
 
     # deconv2
-    with tf.variabale_scope('deconv2') as scope:
-        deconv2 = layers.deconv_relu(conv6_2, [2, 2, 512, 256], scope.name)
+    with tf.variable_scope('deconv2') as scope:
+        deconv2 = layers.deconv_relu(conv6_2, [2, 2, 256, 512], scope.name)
         _activation_summary(deconv1)
     # crop concat
     with tf.variable_scope('crop_concat_2') as scope:
@@ -143,8 +145,8 @@ def Unet(images):
         _activation_summary(conv7_2)
 
     # deconv3
-    with tf.variabale_scope('deconv3') as scope:
-        deconv3 = layers.deconv_relu(conv7_2, [2, 2, 256, 128], scope.name)
+    with tf.variable_scope('deconv3') as scope:
+        deconv3 = layers.deconv_relu(conv7_2, [2, 2, 128, 256], scope.name)
         _activation_summary(deconv3)
     # crop concat
     with tf.variable_scope('crop_concat_3') as scope:
@@ -159,8 +161,8 @@ def Unet(images):
         _activation_summary(conv8_2)
 
      # deconv4
-    with tf.variabale_scope('deconv4') as scope:
-        deconv4 = layers.deconv_relu(conv8_2, [2, 2, 128, 64], scope.name)
+    with tf.variable_scope('deconv4') as scope:
+        deconv4 = layers.deconv_relu(conv8_2, [2, 2, 64, 128], scope.name)
         _activation_summary(deconv4)
     # crop concat
     with tf.variable_scope('crop_concat_4') as scope:
@@ -171,7 +173,7 @@ def Unet(images):
         _activation_summary(conv9_1)
     # conv9_2
     with tf.variable_scope('conv9_2') as scope:
-        conv9_2 = layers.conv_relu(conv9_1, [3, 3, 128, 64], scope.name)
+        conv9_2 = layers.conv_relu(conv9_1, [3, 3, 64, 64], scope.name)
         _activation_summary(conv9_2)
 
     # softmax_linear
@@ -199,6 +201,8 @@ def loss(logits=None, labels=None):
     """
     # Calculate the average cross entropy loss across the batch.
     labels = tf.cast(labels, tf.int64)
+    labels = tf.squeeze(labels, axis=3)
+
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
         labels=labels, logits=logits, name='cross_entropy_per_example')
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
@@ -221,7 +225,7 @@ def _add_loss_summaries(total_loss):
       loss_averages_op: op for generating moving averages of losses.
     """
     # Compute the moving average of all individual losses and the total loss.
-    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    loss_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, name='avg')
     losses = tf.get_collection('losses')
     loss_averages_op = loss_averages.apply(losses + [total_loss])
 
@@ -266,7 +270,7 @@ def train(total_loss=None, global_step=None):
 
     # Compute gradients.
     with tf.control_dependencies([loss_averages_op]):
-        opt = tf.train.GradAdamOptimizer(learning_rate=lr)
+        opt = tf.train.AdamOptimizer(learning_rate=lr)
         grads = opt.compute_gradients(total_loss)
 
     # Apply gradients.
@@ -291,10 +295,10 @@ def train(total_loss=None, global_step=None):
     return train_op
 
 def dice_coef(y_true, y_pred, smooth=1.0):
-    y_true_f = tf.flatten(y_true)
-    y_pred_f = tf.flatten(y_pred)
-    intersection = tf.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (tf.sum(y_true_f) + tf.sum(y_pred_f) + smooth)
+    y_true_f = tb.flatten(y_true)
+    y_pred_f = tb.flatten(y_pred)
+    intersection = tb.sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (tb.sum(y_true_f) + tb.sum(y_pred_f) + smooth)
 
 def save_model(sess, saver, checkpoint_dir, model_name, step):
     if not os.path.exists(checkpoint_dir):
@@ -309,3 +313,5 @@ def load_model(sess, saver, checkpoint_dir):
         saver.restore(sess, os.path.join(checkpoint_dir, ckpt_name))
         return True
     return False
+
+

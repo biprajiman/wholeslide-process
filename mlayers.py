@@ -2,9 +2,14 @@
 Author: Manish Sapkota
 Created: 05-12-2017
 '''
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import tensorflow as tf
 # pylint: disable=missing-docstring
 # pylint: disable=line-too-long
+
 
 DEFAULT_WEIGHT_DECAY = 0.5
 FLAGS = tf.app.flags.FLAGS
@@ -66,25 +71,27 @@ def conv_relu(bottom, kernel_shape, scope_name):
     Returns:
         Variable Tensor
     """
+    n_filters = kernel_shape[-1]
+
     kernel = variable_with_weight_decay('weights',
                                         shape=kernel_shape,
                                         w_decay=0.0)
     conv = tf.nn.conv2d(bottom,
                         kernel, [1, 1, 1, 1],
-                        padding='VALID')
+                        padding='SAME')
     biases = variable_on_cpu('biases',
-                              [kernel_shape[-1]],
+                              [n_filters],
                               tf.constant_initializer(0.0))
     pre_activation = tf.nn.bias_add(conv, biases)
 
     return tf.nn.relu(pre_activation, name=scope_name)
 
-def deconv_relu(bottom, kernel_shape, scope_name, output_shape=None):
+def deconv_relu(bottom, kernel_shape, scope_name, padding='VALID', output_shape=None):
     """ Helper to create deconvolution (transpose convolution) with relu non linearity
     Args:
         imput_images: input feature map or the original image
-        kernel_shape: shape of the deconvolution kernel to use
-        output_shape: shape of the desired output
+        kernel_shape: shape of the deconvolution kernel to use (h, w, out_channels, in_channels)
+        output_shape: shape of the desired output (batch, h, w, out_channels)
         scope_name: name of the variable
     Returns:
         Variable Tensor
@@ -92,28 +99,42 @@ def deconv_relu(bottom, kernel_shape, scope_name, output_shape=None):
     kernel = variable_with_weight_decay('weights',
                                     shape=kernel_shape,
                                     w_decay=0.0)
-    # print x.get_shape()
-    # print W.get_shape()
-    if output_shape is None:
-        output_shape = bottom.get_shape().as_list()
-        output_shape[1] *= 2
-        output_shape[2] *= 2
-        output_shape[3] = kernel.get_shape().as_list()[2]
+
+    print (scope_name+ ":")
+    print (kernel.get_shape())
+    dyn_input_shape = tf.shape(bottom)
+    n_filters = kernel_shape[2]
+
+    # extract batch-size like as a symbolic tensor to allow variable size
+    batch_size = dyn_input_shape[0]
+    stride_h = 2
+    stride_w = 2
+    assert padding in {'SAME', 'VALID'}
+    if padding is 'SAME':
+        out_h = dyn_input_shape[1] * stride_h # stride width and height used 2 [1, 2, 2, 1]
+        out_w = dyn_input_shape[2] * stride_w # stride width and height used 2 [1, 2, 2, 1]
+    elif padding is 'VALID':
+        out_h = (dyn_input_shape[1] - 1) * stride_h + kernel_shape[0]
+        out_w = (dyn_input_shape[2] - 1) * stride_w + kernel_shape[1]
+
+    output_shape = tf.stack([batch_size, out_h, out_w, n_filters])
 
     # print output_shape
     conv = tf.nn.conv2d_transpose(bottom, kernel,
                                   output_shape,
-                                  strides=[1, 2, 2, 1],
-                                  padding="VALID")
+                                  strides=[1, stride_h, stride_w, 1],
+                                  padding='SAME')
     biases = variable_on_cpu('biases',
-                              [kernel_shape[-1]],
+                              [n_filters],
                               tf.constant_initializer(0.0))
 
     pre_activation = tf.nn.bias_add(conv, biases)
 
+    print (pre_activation.get_shape())
+
     return tf.nn.relu(pre_activation, name=scope_name)
 
-def max_pool(bottom, name, debug):
+def max_pool(bottom, name):
     """ Helper to create max pooling layer of default size and stride
     Args:
         bottom: bottom input tensor
@@ -127,15 +148,22 @@ def max_pool(bottom, name, debug):
                           strides=[1, 2, 2, 1],
                           padding='VALID',
                           name=name)
-    if debug:
-        pool = tf.Print(pool, [tf.shape(pool)],
-                        message='Shape of %s' % name,
-                        summarize=4, first_n=1)
     return pool
 
 def dropout(bottom, keep_prob=0.5):
     """ Helper to add the dropout to the network """
     return tf.nn.dropout(bottom, keep_prob)
+
+def crop(bottom1, bottom2):
+    """ Function to crop and concat the bottom1 features to match bottom2 similar to crop concat of unet"""
+    b1_shape = tf.shape(bottom1)
+    b2_shape = tf.shape(bottom2)
+
+    # offsets for the top left corner of the crop
+    offsets = [0, (b1_shape[1] - b2_shape[1]) // 2,
+               (b1_shape[2] - b2_shape[2]) // 2, 0]
+    size = [-1, b2_shape[1], b2_shape[2], -1]
+    return tf.slice(bottom1, offsets, size)
 
 def crop_and_concat(bottom1, bottom2):
     """ Function to crop and concat the bottom1 features to match bottom2 similar to crop concat of unet"""

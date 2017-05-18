@@ -64,7 +64,7 @@ def data_weighted_loader(path, batch_size, ignore_val=44, pos_val=255, neg_val=1
             yield img/255.0, mask, weight, img_labels
             # yield norm_mean_img(img), mask, weight, img_labels
 
-    train_data_gen_args = dict(-)
+    train_data_gen_args = dict()
 
     seed = 1234
     train_image_datagen = ImageDataGenerator(**train_data_gen_args).flow_from_directory(
