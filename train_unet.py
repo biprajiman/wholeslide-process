@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(KERAS_PATH, 'keras'))
 import keras
 import shutil
 import time
+import numpy as np
 import unet as u
 from data_gen import data_weighted_loader
 
@@ -73,31 +74,30 @@ def train_unet():
     # Model
     unet_pred = u.Unet(img)
 
-    # define optimzer
+    '''
+    Version : Manish
+    '''
+    # # define optimzer
     global_step = tf.Variable(0, name='global_step', trainable=False)
-
-    loss_ori = u.loss(logits=unet_pred, labels=label)
-    loss_mask = tf.multiply(loss_ori, weights)
-    unet_loss = tf.reduce_mean(loss_mask) * 1.0 / tf.reduce_mean(weights)
+    unet_loss = u.sigmoid_loss(logits=unet_pred, labels=label, weights=weights)
     train_op = u.train(total_loss=unet_loss, global_step=global_step)
 
-    unet_pred = tf.nn.softmax(unet_pred)
-    print("Prediction shape:")
-    print(unet_pred.get_shape())
+    # # Sigmoid
+    unet_pred = tf.nn.sigmoid(unet_pred)
     unet_acc = tf.reduce_mean(u.dice_coef(label, unet_pred))
 
     # define summary for tensorboard
     tf.summary.scalar('loss', unet_loss)
     tf.summary.scalar('dice', unet_acc)
-    tf.summary.image('input', img, max_outputs=3)
-    tf.summary.image('label', label, max_outputs=3)
-    tf.summary.image('weight', weights, max_outputs=3)
-    tf.summary.image('prediction', unet_pred, max_outputs=3)
+    #tf.summary.image('input', img, max_outputs=3)
+    #tf.summary.image('label', label, max_outputs=3)
+    #tf.summary.image('weight', weights, max_outputs=3)
+    #tf.summary.image('prediction', unet_pred, max_outputs=3)
     summary_merged = tf.summary.merge_all()
 
     # define saver
-    #if os.path.exists(FLAGS.log_dir):
-        #shutil.rmtree(FLAGS.log_dir)
+    if os.path.exists(FLAGS.log_dir):
+        shutil.rmtree(FLAGS.log_dir)
     train_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
     saver = tf.train.Saver()
 
@@ -121,18 +121,18 @@ def train_unet():
         start_t = time.time()
         for ibatch in range(start_step + 1, start_step + tot_iter + 1):
             x_batch, y_batch, weight, _ = train_generator.next()
-            feed_dict = {img: x_batch, label: y_batch, weights: weight}
+            feed_dict = {img: x_batch, label:y_batch, weights:weight}
             _, loss, summary, dice_score = sess.run([train_op, unet_loss, summary_merged, unet_acc], feed_dict=feed_dict)
 
             global_step.assign(ibatch).eval()
             train_writer.add_summary(summary, ibatch)
 
-            if ibatch % 10 == 0:
+            if ibatch % 1 == 0:
                 time_elapsed = time.time() - start_t
                 print ('epoch/batch:{:3d}/{:5d}, loss={:0.2f}, dice_score={:0.2f}, takes {:0.2f}s for {:3d} images'.format(
-                    int(ibatch / FLAGS.num_minibatch), int(ibatch % FLAGS.num_minibatch), loss, dice_score, time_elapsed, FLAGS.batch_size * 10))
+                    int(ibatch / FLAGS.num_examples_per_epoch), int(ibatch % FLAGS.num_examples_per_epoch), loss, dice_score, time_elapsed, FLAGS.batch_size * 10))
                 start_t = time.time()
-            if ibatch % FLAGS.num_minibatch == 0:
+            if ibatch % FLAGS.num_examples_per_epoch == 0:
                 # saving checkpoint every epoch
                 u.save_model(sess, saver, FLAGS.checkpoint_dir,
                              FLAGS.model_name, global_step)

@@ -11,7 +11,7 @@ import tensorflow as tf
 # pylint: disable=line-too-long
 
 
-DEFAULT_WEIGHT_DECAY = 0.5
+DEFAULT_WEIGHT_DECAY = 0.0
 FLAGS = tf.app.flags.FLAGS
 
 def variable_on_cpu(name, shape, initializer):
@@ -182,4 +182,11 @@ def full_connection(bottom, shape, scope_name):
     weights = variable_with_weight_decay('weights', shape=shape)
     biases = variable_on_cpu('biases', [shape[-1]], tf.constant_initializer(0.1))
     return tf.nn.relu(tf.matmul(bottom, weights) + biases, name=scope_name)
-    
+
+def multidimensional_softmax(target, axis, name=None):
+    with tf.name_scope(name, 'softmax', values=[target]):
+        max_axis = tf.reduce_max(target, axis, keep_dims=True)
+        target_exp = tf.exp(target-max_axis)
+        normalize = tf.reduce_sum(target_exp, axis, keep_dims=True)
+        softmax = target_exp / normalize
+        return softmax

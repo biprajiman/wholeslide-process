@@ -14,6 +14,10 @@ sys.path.insert(0, os.path.join(KERAS_PATH, 'keras'))
 sys.path.insert(0, os.path.join(KERAS_PATH, 'keras', 'layers'))
 from keras.preprocessing.image import ImageDataGenerator
 
+# pylint: disable=missing-docstring
+# pylint: disable=line-too-long
+# pylint: disable=invalid-name
+
 
 def norm_mean_img(img):
     assert img.shape[3] == 3
@@ -35,7 +39,7 @@ def data_weighted_loader(path, batch_size, ignore_val=44, pos_val=255, neg_val=1
     def imerge(img_gen, mask_gen):
         for (img, img_labels), (mask, mask_labels) in itertools.izip(img_gen, mask_gen):
             # weight
-            mask = np.expand_dims(mask[:,:,:,0], axis=3)
+            mask = np.expand_dims(mask[:, :, :, 0], axis=3)
 
             weight = np.ones(mask.shape, np.float)
             weight[mask==ignore_val] = 0

@@ -106,6 +106,7 @@ def Unet(images):
     with tf.variable_scope('conv5_1') as scope:
         conv5_1 = layers.conv_relu(pool4, [3, 3, 512, 1024], scope.name)
         _activation_summary(conv5_1)
+
     # conv5_2
     with tf.variable_scope('conv5_2') as scope:
         conv5_2 = layers.conv_relu(conv5_1, [3, 3, 1024, 1024], scope.name)
@@ -176,42 +177,33 @@ def Unet(images):
         conv9_2 = layers.conv_relu(conv9_1, [3, 3, 64, 64], scope.name)
         _activation_summary(conv9_2)
 
-    # softmax_linear
+    # sigmoid_linear
     # linear layer(WX + b),
     # We don't apply softmax here because
-    # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
+    # tf.nn.sigmoid_cross_entropy_with_logits accepts the unscaled logits
     # and performs the softmax internally for efficiency.
-    with tf.variable_scope('softmax_linear') as scope:
-        softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, FLAGS.num_classes], scope.name)
-        _activation_summary(softmax_linear)
+    with tf.variable_scope('sigmoid_linear') as scope:
+        sigmoid_linear = layers.conv_relu(conv9_2, [1, 1, 64, FLAGS.num_classes], scope.name)
+        _activation_summary(sigmoid_linear)
 
-    return softmax_linear
+    return sigmoid_linear
 
 
-def loss(logits=None, labels=None):
-    """Add L2Loss to all the trainable variables.
+def sigmoid_loss(logits=None, labels=None, weights=None):
 
-    Add summary for "Loss" and "Loss/avg".
-    Args:
-      logits: Logits from inference().
-      labels: Labels from inputs. 1-D tensor of shape [batch_size]
+    cross_entropy_ori = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits)
+    cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
+    cross_entropy_mean = tf.reduce_mean(cross_entropy_mask, name='cross_entropy') * 1.0 / tf.reduce_mean(weights)
 
-    Returns:
-      Loss tensor of type float.
-    """
-    # Calculate the average cross entropy loss across the batch.
-    labels = tf.cast(labels, tf.int64)
-    labels = tf.squeeze(labels, axis=3)
+    print("Cross entropy shapes:")
+    print(cross_entropy_mask.get_shape())
+    print(cross_entropy_mean.get_shape())
 
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        labels=labels, logits=logits, name='cross_entropy_per_example')
-    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
     tf.add_to_collection('losses', cross_entropy_mean)
 
     # The total loss is defined as the cross entropy loss plus all of the weight
     # decay terms (L2 loss).
     return tf.add_n(tf.get_collection('losses'), name='total_loss')
-
 
 def _add_loss_summaries(total_loss):
     """Add summaries for losses in model.
@@ -254,8 +246,7 @@ def train(total_loss=None, global_step=None):
       train_op: op for training.
     """
     # Variables that affect learning rate.
-    num_batches_per_epoch = FLAGS.num_examples_per_epoch / FLAGS.batch_size
-    decay_steps = int(num_batches_per_epoch * FLAGS.decay_num_epoch)
+    decay_steps = int(FLAGS.num_examples_per_epoch  * FLAGS.decay_num_epoch)
 
     # Decay the learning rate exponentially based on the number of steps.
     lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
