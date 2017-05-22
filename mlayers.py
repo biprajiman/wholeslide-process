@@ -183,10 +183,19 @@ def full_connection(bottom, shape, scope_name):
     biases = variable_on_cpu('biases', [shape[-1]], tf.constant_initializer(0.1))
     return tf.nn.relu(tf.matmul(bottom, weights) + biases, name=scope_name)
 
-def multidimensional_softmax(target, axis, name=None):
-    with tf.name_scope(name, 'softmax', values=[target]):
-        max_axis = tf.reduce_max(target, axis, keep_dims=True)
-        target_exp = tf.exp(target-max_axis)
-        normalize = tf.reduce_sum(target_exp, axis, keep_dims=True)
-        softmax = target_exp / normalize
-        return softmax
+"""
+Code source: https://github.com/shekkizh/FCN.tensorflow/blob/master/TensorflowUtils.py
+"""
+def add_to_regularization_and_summary(var):
+    if var is not None:
+        tf.summary.histogram(var.op.name, var)
+        tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
+
+def add_activation_summary(var):
+    if var is not None:
+        tf.summary.histogram(var.op.name + "/activation", var)
+        tf.summary.scalar(var.op.name + "/sparsity", tf.nn.zero_fraction(var))
+
+def add_gradient_summary(grad, var):
+    if grad is not None:
+        tf.summary.histogram(var.op.name + "/gradient", grad)
