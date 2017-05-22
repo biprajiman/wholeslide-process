@@ -55,10 +55,11 @@ def variable_with_weight_decay(name, shape, w_decay=None):
     if w_decay is None or w_decay <= 0.0:
         w_decay = DEFAULT_WEIGHT_DECAY
 
-    weight_decay = tf.multiply(tf.nn.l2_loss(var),
-                                w_decay,
-                                name='weight_loss')
-    tf.add_to_collection('losses', weight_decay)
+    if not tf.get_variable_scope().reuse:
+        weight_decay = tf.multiply(tf.nn.l2_loss(var),
+                                   w_decay,
+                                   name='weight_loss')
+        tf.add_to_collection('losses', weight_decay)
 
     return var
 
@@ -80,8 +81,8 @@ def conv_relu(bottom, kernel_shape, scope_name):
                         kernel, [1, 1, 1, 1],
                         padding='SAME')
     biases = variable_on_cpu('biases',
-                              [n_filters],
-                              tf.constant_initializer(0.0))
+                             [n_filters],
+                             tf.constant_initializer(0.0))
     pre_activation = tf.nn.bias_add(conv, biases)
 
     return tf.nn.relu(pre_activation, name=scope_name)
@@ -97,11 +98,11 @@ def deconv_relu(bottom, kernel_shape, scope_name, padding='VALID', output_shape=
         Variable Tensor
     """
     kernel = variable_with_weight_decay('weights',
-                                    shape=kernel_shape,
-                                    w_decay=0.0)
+                                        shape=kernel_shape,
+                                        w_decay=0.0)
 
-    print (scope_name+ ":")
-    print (kernel.get_shape())
+    print(scope_name+ ":")
+    print(kernel.get_shape())
     dyn_input_shape = tf.shape(bottom)
     n_filters = kernel_shape[2]
 
@@ -129,9 +130,6 @@ def deconv_relu(bottom, kernel_shape, scope_name, padding='VALID', output_shape=
                               tf.constant_initializer(0.0))
 
     pre_activation = tf.nn.bias_add(conv, biases)
-
-    print (pre_activation.get_shape())
-
     return tf.nn.relu(pre_activation, name=scope_name)
 
 def max_pool(bottom, name):
@@ -182,6 +180,20 @@ def full_connection(bottom, shape, scope_name):
     weights = variable_with_weight_decay('weights', shape=shape)
     biases = variable_on_cpu('biases', [shape[-1]], tf.constant_initializer(0.1))
     return tf.nn.relu(tf.matmul(bottom, weights) + biases, name=scope_name)
+
+def _variable_summaries(var):
+    """Attach a lot of summaries to a Tensor."""
+    if not tf.get_variable_scope().reuse:
+        name = var.op.name
+        with tf.name_scope('summaries'):
+            mean = tf.reduce_mean(var)
+            tf.summary.scalar(name + '/mean', mean)
+            with tf.name_scope('stddev'):
+                stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
+            tf.summary.scalar(name + '/sttdev', stddev)
+            tf.summary.scalar(name + '/max', tf.reduce_max(var))
+            tf.summary.scalar(name + '/min', tf.reduce_min(var))
+            tf.summary.histogram(name, var)
 
 """
 Code source: https://github.com/shekkizh/FCN.tensorflow/blob/master/TensorflowUtils.py

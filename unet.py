@@ -199,17 +199,18 @@ def softmax_loss(logits=None, labels=None, weights=None):
     """
     # output will be tensor of same shape as labels
     # i.e. [batch_size, height, width]
-    labels = tf.cast(labels, tf.int64)
+    logits = tf.reshape(logits, (-1, FLAGS.num_classes))
+    labels = tf.cast(tf.reshape(labels, [-1]), tf.int64)
+    weights = tf.cast(tf.reshape(weights, [-1]), tf.int64)
     cross_entropy_ori = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                                       labels=tf.squeeze(labels, squeeze_dims=[3]),
-                                                                       )
-    weights = tf.squeeze(weights, squeeze_dims=[3])
+                                                                       labels=labels)
     cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
-    cross_entropy_mean = tf.reduce_mean(cross_entropy_mask) / tf.reduce_mean(weights)
+    cross_entropy_mean = tf.reduce_mean(cross_entropy_mask, name="xentropy_mean") * 1.0 / tf.reduce_mean(weights)
+    tf.add_to_collection('losses', cross_entropy_mean)
 
-    tf.summary.scalar("entropy", cross_entropy_mean)
+    loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-    return cross_entropy_mean
+    return loss
 
 def sigmoid_loss(logits=None, labels=None, weights=None):
     """ Computes sigmoid loss cross entropy loss
