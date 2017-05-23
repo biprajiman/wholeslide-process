@@ -270,6 +270,58 @@ def train(loss_val, var_list):
 
     return optimizer.apply_gradients(grads)
 
+# def train(total_loss=None, global_step=None):
+#     """Train model.
+
+#     Create an optimizer and apply to all trainable variables. Add moving
+#     average for all trainable variables.
+
+#     Args:
+#       total_loss: Total loss from loss().
+#       global_step: Integer Variable counting the number of training steps
+#         processed.
+#     Returns:
+#       train_op: op for training.
+#     """
+#     # Variables that affect learning rate.
+#     decay_steps = int(FLAGS.num_examples_per_epoch  * FLAGS.decay_num_epoch)
+
+#     # Decay the learning rate exponentially based on the number of steps.
+#     lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
+#                                     global_step,
+#                                     decay_steps,
+#                                     FLAGS.lr_decay,
+#                                     staircase=True)
+#     tf.summary.scalar('learning_rate', lr)
+
+#     # Generate moving averages of all losses and associated summaries.
+#     loss_averages_op = _add_loss_summaries(total_loss)
+
+#     # Compute gradients.
+#     with tf.control_dependencies([loss_averages_op]):
+#         opt = tf.train.AdamOptimizer(learning_rate=lr)
+#         grads = opt.compute_gradients(total_loss)
+
+#     # Apply gradients.
+#     apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+
+#     # Add histograms for trainable variables.
+#     for var in tf.trainable_variables():
+#         layers.add_to_regularization_and_summary(var)
+
+#     # Add histograms for gradients.
+#     for grad, var in grads:
+#         layers.add_gradient_summary(grad, var)
+
+#     # Track the moving averages of all trainable variables.
+#     variable_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, global_step)
+#     variables_averages_op = variable_averages.apply(tf.trainable_variables())
+
+#     with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
+#         train_op = tf.no_op(name='train')
+
+#     return train_op
+
 def dice_coef(y_true, y_pred, smooth=1.0):
     y_true_f = tb.flatten(tf.cast(y_true, tf.float32))
     y_pred_f = tb.flatten(tf.cast(y_pred, tf.float32))
