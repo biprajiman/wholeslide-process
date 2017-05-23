@@ -186,7 +186,11 @@ def Unet(images):
         softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, FLAGS.num_classes], scope.name)
         _activation_summary(softmax_linear)
 
-    return softmax_linear
+    prediction = tf.expand_dims(tf.argmax(tf.nn.softmax(softmax_linear),
+                                         axis=3,
+                                         name="prediction"),
+                               axis=3)
+    return softmax_linear, prediction
 
 def softmax_loss(logits=None, labels=None, weights=None):
     """ Computes softmax loss cross entropy loss
@@ -201,11 +205,11 @@ def softmax_loss(logits=None, labels=None, weights=None):
     # i.e. [batch_size, height, width]
     logits = tf.reshape(logits, (-1, FLAGS.num_classes))
     labels = tf.cast(tf.reshape(labels, [-1]), tf.int64)
-    weights = tf.cast(tf.reshape(weights, [-1]), tf.int64)
+    weights = tf.reshape(weights, [-1])
     cross_entropy_ori = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                                        labels=labels)
     cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
-    cross_entropy_mean = tf.reduce_mean(cross_entropy_mask, name="xentropy_mean") * 1.0 / tf.reduce_mean(weights)
+    cross_entropy_mean = tf.reduce_sum(cross_entropy_mask) * 1.0 / tf.reduce_sum(weights)
     tf.add_to_collection('losses', cross_entropy_mean)
 
     loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
@@ -227,57 +231,44 @@ def sigmoid_loss(logits=None, labels=None, weights=None):
     cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
     cross_entropy_mean = tf.reduce_mean(cross_entropy_mask, name='cross_entropy') * 1.0 / tf.reduce_mean(weights)
 
-    tf.summary.scalar("entropy", cross_entropy_mean)
+    tf.add_to_collection('losses', cross_entropy_mean)
 
-    return cross_entropy_mean
+    loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-def train(total_loss=None, global_step=None):
-    """Train model.
+    return loss
 
-    Create an optimizer and apply to all trainable variables. Add moving
-    average for all trainable variables.
-
+def _add_loss_summaries(total_loss):
+    """Add summaries for losses in CIFAR-10 model.
+    Generates moving average for all losses and associated summaries for
+    visualizing the performance of the network.
     Args:
-      total_loss: Total loss from loss().
-      global_step: Integer Variable counting the number of training steps
-        processed.
+    total_loss: Total loss from loss().
     Returns:
-      train_op: op for training.
+    loss_averages_op: op for generating moving averages of losses.
     """
-    # Variables that affect learning rate.
-    decay_steps = int(FLAGS.num_examples_per_epoch  * FLAGS.decay_num_epoch)
+    # Compute the moving average of all individual losses and the total loss.
+    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    losses = tf.get_collection('losses')
+    loss_averages_op = loss_averages.apply(losses + [total_loss])
 
-    # Decay the learning rate exponentially based on the number of steps.
-    lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
-                                    global_step,
-                                    decay_steps,
-                                    FLAGS.lr_decay,
-                                    staircase=True)
-    tf.summary.scalar('learning_rate', lr)
+    # Attach a scalar summary to all individual losses and the total loss; do the
+    # same for the averaged version of the losses.
+    for l in losses + [total_loss]:
+        # Name each loss as '(raw)' and name the moving average version of the loss
+        # as the original loss name.
+        tf.summary.scalar(l.op.name + ' (raw)', l)
+        tf.summary.scalar(l.op.name, loss_averages.average(l))
 
-    # compute gradients with AdamOptimizer
-    opt = tf.train.AdamOptimizer(learning_rate=lr)
-    grads = opt.compute_gradients(total_loss)
+    return loss_averages_op
 
-    # Apply gradients.
-    apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+def train(loss_val, var_list):
+    optimizer = tf.train.AdamOptimizer(FLAGS.initial_learning_rate)
+    grads = optimizer.compute_gradients(loss_val, var_list=var_list)
 
-    # Add histograms for trainable variables.
-    for var in tf.trainable_variables():
-        layers.add_to_regularization_and_summary(var)
-
-    # Add histograms for gradients.
     for grad, var in grads:
         layers.add_gradient_summary(grad, var)
 
-    # Track the moving averages of all trainable variables.
-    variable_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, global_step)
-    variables_averages_op = variable_averages.apply(tf.trainable_variables())
-
-    with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
-        train_op = tf.no_op(name='train')
-
-    return train_op
+    return optimizer.apply_gradients(grads)
 
 def dice_coef(y_true, y_pred, smooth=1.0):
     y_true_f = tb.flatten(tf.cast(y_true, tf.float32))

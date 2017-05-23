@@ -42,7 +42,7 @@ def set_tf_flags():
     tf.app.flags.DEFINE_boolean('use_fp16', False, """Train the model using fp16.""")
     tf.app.flags.DEFINE_integer('num_epoch', 10, """Number of epochs to run""")
     tf.app.flags.DEFINE_integer('num_examples_per_epoch', 20000, """Number of examples seen per epoch""")
-    tf.app.flags.DEFINE_integer('batch_size', 5, """batch size per iteration""")
+    tf.app.flags.DEFINE_integer('batch_size', 1, """batch size per iteration""")
     tf.app.flags.DEFINE_float('initial_learning_rate', 0.1, """Initial learning rate""")
     tf.app.flags.DEFINE_float('lr_decay', 0.1, """learning rate decay multiplier""")
     tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, """Moving average decay""")
@@ -71,7 +71,7 @@ def train_unet():
         None, FLAGS.input_rows, FLAGS.input_cols, 1))
 
     # Model
-    logits = u.Unet(img)
+    logits, unet_pred = u.Unet(img)
 
     '''
     Version : Manish
@@ -79,19 +79,22 @@ def train_unet():
     # # define optimzer
     global_step = tf.Variable(0, name='global_step', trainable=False)
     # learning_rate scheduler
-    learning_rate = tf.train.exponential_decay(FLAGS.initial_learning_rate, global_step,
-                                               FLAGS.num_examples_per_epoch * FLAGS.decay_num_epoch,
-                                               FLAGS.lr_decay, staircase=True)
+    # learning_rate = tf.train.exponential_decay(FLAGS.initial_learning_rate, global_step,
+    #                                            FLAGS.num_examples_per_epoch * FLAGS.decay_num_epoch,
+    #                                            FLAGS.lr_decay, staircase=True)
+
     unet_loss = u.softmax_loss(logits=logits, labels=label, weights=weights)
-    train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(unet_loss,
-                                                                            global_step=global_step)
-    #u.train(total_loss=unet_loss, global_step=global_step)
+
+    train_op = u.train(unet_loss, tf.trainable_variables())
+
+    #train_op = u.train(total_loss=unet_loss, global_step=global_step)
 
     # # Softmax
-    unet_pred = tf.expand_dims(tf.argmax(tf.nn.softmax(logits),
-                                         axis=3,
-                                         name="prediction"),
-                               axis=3)
+    # unet_pred = tf.expand_dims(tf.argmax(tf.nn.softmax(logits),
+    #                                      axis=3,
+    #                                      name="prediction"),
+    #                            axis=3)
+    # unet_pred = tf.sigmoid(logits)
     unet_acc = tf.reduce_mean(u.dice_coef(label, unet_pred))
 
     # define summary for tensorboard
@@ -135,7 +138,7 @@ def train_unet():
             global_step.assign(ibatch).eval()
             train_writer.add_summary(summary, ibatch)
 
-            if ibatch % 1 == 0:
+            if ibatch % 10 == 0:
                 time_elapsed = time.time() - start_t
                 print ('epoch/batch:{:3d}/{:5d}, loss={:0.2f}, dice_score={:0.2f}, takes {:0.2f}s for {:3d} images'.format(
                     int(ibatch / FLAGS.num_examples_per_epoch), int(ibatch % FLAGS.num_examples_per_epoch), loss, dice_score, time_elapsed, FLAGS.batch_size * 10))
