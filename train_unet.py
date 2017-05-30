@@ -8,6 +8,7 @@ Some of the codes have been adopted from original Tensorflow examples
 # pylint: disable=line-too-long
 # pylint: disable=invalid-name
 # pylin: disable=print
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -36,17 +37,15 @@ def set_tf_flags():
     tf.app.flags.DEFINE_integer('input_rows', 512, """Input image height""")
     tf.app.flags.DEFINE_integer('input_cols', 512, """Input image width""")
     tf.app.flags.DEFINE_integer('input_channel', 3, """Input image channels""")
-    tf.app.flags.DEFINE_integer('num_classes', 2, """Output classes""")
+    tf.app.flags.DEFINE_integer('num_classes', 1, """Output classes""")
 
     # training parameters
     tf.app.flags.DEFINE_boolean('use_fp16', False, """Train the model using fp16.""")
     tf.app.flags.DEFINE_integer('num_epoch', 10, """Number of epochs to run""")
     tf.app.flags.DEFINE_integer('num_examples_per_epoch', 20000, """Number of examples seen per epoch""")
     tf.app.flags.DEFINE_integer('batch_size', 1, """batch size per iteration""")
-    tf.app.flags.DEFINE_float('initial_learning_rate', 0.1, """Initial learning rate""")
+    tf.app.flags.DEFINE_float('initial_learning_rate', 0.01, """Initial learning rate""")
     tf.app.flags.DEFINE_float('lr_decay', 0.1, """learning rate decay multiplier""")
-    tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, """Moving average decay""")
-    tf.app.flags.DEFINE_float('weight_decay', 0.0005, """Weight regularizer""")
     tf.app.flags.DEFINE_integer('decay_num_epoch', 1, """Decay learning rate after num of epoch""")
     tf.app.flags.DEFINE_string('training_dir', './data/BladderData/Segmentation/', """Training data folder""")
     tf.app.flags.DEFINE_string('checkpoint_dir', './Checkpoints', """Folder to save intermediate training snapshots""")
@@ -71,30 +70,26 @@ def train_unet():
         None, FLAGS.input_rows, FLAGS.input_cols, 1))
 
     # Model
-    logits, unet_pred = u.Unet(img)
+    logits, _ = u.Unet(img)
 
     '''
     Version : Manish
     '''
     # # define optimzer
     global_step = tf.Variable(0, name='global_step', trainable=False)
+
     # learning_rate scheduler
-    # learning_rate = tf.train.exponential_decay(FLAGS.initial_learning_rate, global_step,
-    #                                            FLAGS.num_examples_per_epoch * FLAGS.decay_num_epoch,
-    #                                            FLAGS.lr_decay, staircase=True)
+    learning_rate = tf.train.exponential_decay(FLAGS.initial_learning_rate, global_step,
+                                               FLAGS.num_examples_per_epoch * FLAGS.decay_num_epoch,
+                                               FLAGS.lr_decay, staircase=True)
 
-    unet_loss = u.softmax_loss(logits=logits, labels=label, weights=weights)
+    # learning_rate scheduler
+    unet_loss = u.sigmoid_loss(logits=logits, labels=label, weights=weights)
 
-    train_op = u.train(unet_loss, tf.trainable_variables())
+    train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(unet_loss, global_step=global_step)
 
-    #train_op = u.train(total_loss=unet_loss, global_step=global_step)
+    unet_pred = tf.sigmoid(logits)
 
-    # # Softmax
-    # unet_pred = tf.expand_dims(tf.argmax(tf.nn.softmax(logits),
-    #                                      axis=3,
-    #                                      name="prediction"),
-    #                            axis=3)
-    # unet_pred = tf.sigmoid(logits)
     unet_acc = tf.reduce_mean(u.dice_coef(label, unet_pred))
 
     # define summary for tensorboard
@@ -103,7 +98,7 @@ def train_unet():
     tf.summary.image('input', img, max_outputs=3)
     tf.summary.image('label', label, max_outputs=3)
     tf.summary.image('weight', weights, max_outputs=3)
-    tf.summary.image('prediction', tf.cast(unet_pred, tf.float32), max_outputs=3)
+    tf.summary.image('prediction', unet_pred, max_outputs=3)
     summary_merged = tf.summary.merge_all()
 
     # define saver

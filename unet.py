@@ -186,14 +186,14 @@ def Unet(images):
         softmax_linear = layers.conv_relu(conv9_2, [1, 1, 64, FLAGS.num_classes], scope.name)
         _activation_summary(softmax_linear)
 
-    prediction = tf.expand_dims(tf.argmax(tf.nn.softmax(softmax_linear),
+    prediction = tf.expand_dims(tf.argmax(softmax_linear,
                                          axis=3,
                                          name="prediction"),
                                axis=3)
     return softmax_linear, prediction
 
-def softmax_loss(logits=None, labels=None, weights=None):
-    """ Computes softmax loss cross entropy loss
+def sigmoid_loss(logits=None, labels=None, weights=None):
+    """ Computes sigmoid loss cross entropy loss
     Args:
         logits = tensor of shape [batch_size, height, width, num_classes]
         labels = segmentation mask of shape [batch_size, height, width, 1]
@@ -203,128 +203,19 @@ def softmax_loss(logits=None, labels=None, weights=None):
     """
     # output will be tensor of same shape as labels
     # i.e. [batch_size, height, width]
-    logits = tf.reshape(logits, (-1, FLAGS.num_classes))
-    labels = tf.cast(tf.reshape(labels, [-1]), tf.int64)
-    weights = tf.reshape(weights, [-1])
-    cross_entropy_ori = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
+    # logits = tf.reshape(logits, (-1, FLAGS.num_classes))
+    # labels = tf.cast(tf.reshape(labels, [-1]), tf.int64)
+    # weights = tf.reshape(weights, [-1])
+    cross_entropy_ori = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
                                                                        labels=labels)
     cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
-    cross_entropy_mean = tf.reduce_sum(cross_entropy_mask) * 1.0 / tf.reduce_sum(weights)
-    tf.add_to_collection('losses', cross_entropy_mean)
+    cross_entropy_mean = tf.div(tf.reduce_mean(cross_entropy_mask), tf.reduce_mean(weights))
 
-    loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-    return loss
-
-def sigmoid_loss(logits=None, labels=None, weights=None):
-    """ Computes sigmoid loss cross entropy loss
-    Args:
-        logits = tensor of shape [batch_size, height, width, 1]
-        labels = segmentation mask of shape [batch_size, height, width, 1]
-        weights = ignore weights mask of shape [batch_size, height, width, 1]
-    Returns:
-        cross_entropy_mean: scalar loss
-    """
-    # output will be same shape as logits
-    # i.e. [batch_size, height, width, 1]
-    cross_entropy_ori = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits)
-    cross_entropy_mask = tf.multiply(cross_entropy_ori, weights)
-    cross_entropy_mean = tf.reduce_mean(cross_entropy_mask, name='cross_entropy') * 1.0 / tf.reduce_mean(weights)
-
-    tf.add_to_collection('losses', cross_entropy_mean)
-
-    loss = tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-    return loss
-
-def _add_loss_summaries(total_loss):
-    """Add summaries for losses in CIFAR-10 model.
-    Generates moving average for all losses and associated summaries for
-    visualizing the performance of the network.
-    Args:
-    total_loss: Total loss from loss().
-    Returns:
-    loss_averages_op: op for generating moving averages of losses.
-    """
-    # Compute the moving average of all individual losses and the total loss.
-    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
-    losses = tf.get_collection('losses')
-    loss_averages_op = loss_averages.apply(losses + [total_loss])
-
-    # Attach a scalar summary to all individual losses and the total loss; do the
-    # same for the averaged version of the losses.
-    for l in losses + [total_loss]:
-        # Name each loss as '(raw)' and name the moving average version of the loss
-        # as the original loss name.
-        tf.summary.scalar(l.op.name + ' (raw)', l)
-        tf.summary.scalar(l.op.name, loss_averages.average(l))
-
-    return loss_averages_op
-
-def train(loss_val, var_list):
-    optimizer = tf.train.AdamOptimizer(FLAGS.initial_learning_rate)
-    grads = optimizer.compute_gradients(loss_val, var_list=var_list)
-
-    for grad, var in grads:
-        layers.add_gradient_summary(grad, var)
-
-    return optimizer.apply_gradients(grads)
-
-# def train(total_loss=None, global_step=None):
-#     """Train model.
-
-#     Create an optimizer and apply to all trainable variables. Add moving
-#     average for all trainable variables.
-
-#     Args:
-#       total_loss: Total loss from loss().
-#       global_step: Integer Variable counting the number of training steps
-#         processed.
-#     Returns:
-#       train_op: op for training.
-#     """
-#     # Variables that affect learning rate.
-#     decay_steps = int(FLAGS.num_examples_per_epoch  * FLAGS.decay_num_epoch)
-
-#     # Decay the learning rate exponentially based on the number of steps.
-#     lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
-#                                     global_step,
-#                                     decay_steps,
-#                                     FLAGS.lr_decay,
-#                                     staircase=True)
-#     tf.summary.scalar('learning_rate', lr)
-
-#     # Generate moving averages of all losses and associated summaries.
-#     loss_averages_op = _add_loss_summaries(total_loss)
-
-#     # Compute gradients.
-#     with tf.control_dependencies([loss_averages_op]):
-#         opt = tf.train.AdamOptimizer(learning_rate=lr)
-#         grads = opt.compute_gradients(total_loss)
-
-#     # Apply gradients.
-#     apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
-
-#     # Add histograms for trainable variables.
-#     for var in tf.trainable_variables():
-#         layers.add_to_regularization_and_summary(var)
-
-#     # Add histograms for gradients.
-#     for grad, var in grads:
-#         layers.add_gradient_summary(grad, var)
-
-#     # Track the moving averages of all trainable variables.
-#     variable_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, global_step)
-#     variables_averages_op = variable_averages.apply(tf.trainable_variables())
-
-#     with tf.control_dependencies([apply_gradient_op, variables_averages_op]):
-#         train_op = tf.no_op(name='train')
-
-#     return train_op
+    return cross_entropy_mean
 
 def dice_coef(y_true, y_pred, smooth=1.0):
-    y_true_f = tb.flatten(tf.cast(y_true, tf.float32))
-    y_pred_f = tb.flatten(tf.cast(y_pred, tf.float32))
+    y_true_f = tb.batch_flatten(tf.cast(y_true, tf.float32))
+    y_pred_f = tb.batch_flatten(tf.cast(y_pred, tf.float32))
     intersection = tb.sum(y_true_f * y_pred_f)
     return (2. * intersection + smooth) / (tb.sum(y_true_f) + tb.sum(y_pred_f) + smooth)
 
