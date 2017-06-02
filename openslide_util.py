@@ -5,24 +5,23 @@ Date: 04/21/2017
 
 import openslide as op
 
+def get_slide_dimension(slide_path=None):
+    # check if slide can be opened
+    try:
+        slide = op.OpenSlide(slide_path)
+    except op.OpenSlideError:
+        print "Cannot find file '" + slide_path + "'"
+        return
+    except op.OpenSlideUnsupportedFormatError:
+        print "File format is not OpenSlide supported type"
+        return
 
-# def saveSlideAsJPEG(slide_path,save_path,level=0):
-#     # check if slide can be opened
-#     try:
-#         Slide = op.OpenSlide(slide_path)
-#     except op.OpenSlideError:
-#         print("Cannot find file '" + slide_path + "'")
-#         return
-#     except op.OpenSlideUnsupportedFormatError:
-#         print("File format is not OpenSlide supported type")
-#     return
-
+    return slide.dimensions
 
 def crop_slideimage(slide_path,
                     location=(0, 0),
                     level=0,
-                    size=(2000, 2000)
-                    ):
+                    size=(512, 512)):
     """
     Returns the region from the given whole_slide
     -----------
@@ -55,6 +54,6 @@ def crop_slideimage(slide_path,
 
     level_0_size = slide.dimensions
 
-    region = slide.read_region(location, level, level_0_size)
+    region = slide.read_region(location, level, size)
 
     return region, level_0_size
